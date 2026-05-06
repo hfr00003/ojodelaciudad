@@ -27,7 +27,7 @@ execSync(
     `--outfile=${OUT}/functions/ssr.func/server.mjs`,
     "--format=esm",
     "--platform=node",
-    "--target=node22",
+    "--target=node20",
     '--external:node:*',
   ].join(" "),
   { stdio: "inherit" }
@@ -36,10 +36,15 @@ execSync(
 // Step 5: Create the function entry point with Node-to-Web adapter
 fs.writeFileSync(
   `${OUT}/functions/ssr.func/index.mjs`,
-  `import server from './server.mjs';
-
-export default async function handler(req, res) {
+  `export default async function handler(req, res) {
   try {
+    // Dynamic import to catch initialization errors
+    const { default: server } = await import('./server.mjs');
+    
+    if (!server || !server.fetch) {
+      throw new Error('SSR Server or fetch handler not found in bundle');
+    }
+
     const protocol = req.headers['x-forwarded-proto'] || 'http';
     const host = req.headers['host'];
     const url = new URL(req.url, \`\${protocol}://\${host}\`);
@@ -57,10 +62,6 @@ export default async function handler(req, res) {
       // @ts-ignore
       duplex: body ? 'half' : undefined,
     });
-
-    if (!server || !server.fetch) {
-      throw new Error('SSR Server or fetch handler not found in bundle');
-    }
 
     const response = await server.fetch(request);
 
@@ -81,8 +82,8 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('SSR Critical Error:', err);
     res.statusCode = 500;
-    res.setHeader('Content-Type', 'text/plain');
-    res.end('SSR Critical Error: ' + err.message + '\\n' + err.stack);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end('SSR Critical Error:\\n' + err.message + '\\n' + err.stack);
   }
 }
 `
@@ -93,7 +94,7 @@ fs.writeFileSync(
   `${OUT}/functions/ssr.func/.vc-config.json`,
   JSON.stringify(
     {
-      runtime: "nodejs22.x",
+      runtime: "nodejs20.x",
       handler: "index.mjs",
       launcherType: "Nodejs",
       supportsResponseStreaming: true,
