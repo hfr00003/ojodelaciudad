@@ -18,34 +18,18 @@ fs.mkdirSync(`${OUT}/functions/ssr.func`, { recursive: true });
 fs.cpSync("dist/client", `${OUT}/static`, { recursive: true });
 console.log("  ✅ Static assets copied");
 
-// Step 4: Bundle server into a self-contained file with esbuild
-console.log("  📦 Bundling server with esbuild...");
-execSync(
-  [
-    "npx esbuild dist/server/server.js",
-    "--bundle",
-    "--outfile=${OUT}/functions/ssr.func/server.js",
-    "--format=cjs",
-    "--platform=node",
-    "--target=node20",
-    '--external:node:*',
-  ].join(" "),
-  { stdio: "inherit" }
-);
+// Step 4: Copy Vite-produced server files to the function directory
+console.log("  📦 Copying server files...");
+fs.cpSync("dist/server", `${OUT}/functions/ssr.func`, { recursive: true });
 
-// Step 5: Create the function entry point (CJS for maximum compatibility)
+// Step 5: Create the function entry point (Node.js ESM)
+// We use .mjs to ensure Node.js treats it as ESM to match Vite's output
 fs.writeFileSync(
-  `${OUT}/functions/ssr.func/index.js`,
-  `const server = require('./server.js');
+  `${OUT}/functions/ssr.func/index.mjs`,
+  `import server from './server.js';
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
-    const fetchHandler = server.default || server;
-    
-    if (!fetchHandler || !fetchHandler.fetch) {
-      throw new Error('SSR Server or fetch handler not found in bundle');
-    }
-
     const protocol = req.headers['x-forwarded-proto'] || 'http';
     const host = req.headers['host'];
     const url = new URL(req.url, \`\${protocol}://\${host}\`);
@@ -55,14 +39,16 @@ module.exports = async function handler(req, res) {
       body = req;
     }
 
+    // In Node 20+, Request/Response/Headers are global
     const request = new Request(url.toString(), {
       method: req.method,
       headers: req.headers,
       body: body,
+      // @ts-ignore
       duplex: body ? 'half' : undefined,
     });
 
-    const response = await fetchHandler.fetch(request);
+    const response = await server.fetch(request);
 
     res.statusCode = response.status;
     response.headers.forEach((value, key) => {
@@ -94,7 +80,7 @@ fs.writeFileSync(
   JSON.stringify(
     {
       runtime: "nodejs20.x",
-      handler: "index.js",
+      handler: "index.mjs",
       launcherType: "Nodejs",
       supportsResponseStreaming: true,
     },
