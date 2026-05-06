@@ -27,7 +27,7 @@ execSync(
     `--outdir=${OUT}/functions/ssr.func`,
     "--format=esm",
     "--platform=node",
-    "--target=node20",
+    "--target=node22",
     "--splitting",
     '--external:node:*',
     "--out-extension:.js=.mjs",
@@ -39,10 +39,7 @@ execSync(
 fs.writeFileSync(
   `${OUT}/functions/ssr.func/index.mjs`,
   `import server from './server.mjs';
-
-export default async function handler(req) {
-  return server.fetch(req);
-}
+export default server.fetch;
 `
 );
 
@@ -51,10 +48,8 @@ fs.writeFileSync(
   `${OUT}/functions/ssr.func/.vc-config.json`,
   JSON.stringify(
     {
-      runtime: "nodejs20.x",
-      handler: "index.mjs",
-      launcherType: "Nodejs",
-      supportsResponseStreaming: true,
+      runtime: "edge",
+      entrypoint: "index.mjs",
     },
     null,
     2
@@ -78,6 +73,13 @@ fs.writeFileSync(
           src: "/(.*\\.wasm)",
           headers: {
             "Content-Type": "application/wasm",
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+        },
+        {
+          src: "/(.*\\.onnx)",
+          headers: {
+            "Content-Type": "application/octet-stream",
             "Cache-Control": "public, max-age=31536000, immutable",
           },
         },
