@@ -24,13 +24,11 @@ execSync(
   [
     "npx esbuild dist/server/server.js",
     "--bundle",
-    `--outdir=${OUT}/functions/ssr.func`,
+    `--outfile=${OUT}/functions/ssr.func/server.mjs`,
     "--format=esm",
     "--platform=node",
     "--target=node22",
-    "--splitting",
     '--external:node:*',
-    "--out-extension:.js=.mjs",
   ].join(" "),
   { stdio: "inherit" }
 );
@@ -46,10 +44,10 @@ export default async function handler(req, res) {
     const host = req.headers['host'];
     const url = new URL(req.url, \`\${protocol}://\${host}\`);
 
-    // Basic body handling for non-GET/HEAD requests
+    // Basic body handling
     let body = null;
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      body = req; // req is a Readable stream which is fine in Node 18+ fetch
+      body = req;
     }
 
     const request = new Request(url.toString(), {
@@ -59,6 +57,10 @@ export default async function handler(req, res) {
       // @ts-ignore
       duplex: body ? 'half' : undefined,
     });
+
+    if (!server || !server.fetch) {
+      throw new Error('SSR Server or fetch handler not found in bundle');
+    }
 
     const response = await server.fetch(request);
 
@@ -77,9 +79,10 @@ export default async function handler(req, res) {
     }
     res.end();
   } catch (err) {
-    console.error('SSR Error:', err);
+    console.error('SSR Critical Error:', err);
     res.statusCode = 500;
-    res.end('Internal Server Error');
+    res.setHeader('Content-Type', 'text/plain');
+    res.end('SSR Critical Error: ' + err.message + '\\n' + err.stack);
   }
 }
 `
