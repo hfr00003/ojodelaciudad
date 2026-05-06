@@ -24,8 +24,8 @@ execSync(
   [
     "npx esbuild dist/server/server.js",
     "--bundle",
-    `--outfile=${OUT}/functions/ssr.func/server.mjs`,
-    "--format=esm",
+    "--outfile=${OUT}/functions/ssr.func/server.js",
+    "--format=cjs",
     "--platform=node",
     "--target=node20",
     '--external:node:*',
@@ -33,15 +33,16 @@ execSync(
   { stdio: "inherit" }
 );
 
-// Step 5: Create the function entry point with Node-to-Web adapter
+// Step 5: Create the function entry point (CJS for maximum compatibility)
 fs.writeFileSync(
-  `${OUT}/functions/ssr.func/index.mjs`,
-  `export default async function handler(req, res) {
+  `${OUT}/functions/ssr.func/index.js`,
+  `const server = require('./server.js');
+
+module.exports = async function handler(req, res) {
   try {
-    // Dynamic import to catch initialization errors
-    const { default: server } = await import('./server.mjs');
+    const fetchHandler = server.default || server;
     
-    if (!server || !server.fetch) {
+    if (!fetchHandler || !fetchHandler.fetch) {
       throw new Error('SSR Server or fetch handler not found in bundle');
     }
 
@@ -49,7 +50,6 @@ fs.writeFileSync(
     const host = req.headers['host'];
     const url = new URL(req.url, \`\${protocol}://\${host}\`);
 
-    // Basic body handling
     let body = null;
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       body = req;
@@ -59,11 +59,10 @@ fs.writeFileSync(
       method: req.method,
       headers: req.headers,
       body: body,
-      // @ts-ignore
       duplex: body ? 'half' : undefined,
     });
 
-    const response = await server.fetch(request);
+    const response = await fetchHandler.fetch(request);
 
     res.statusCode = response.status;
     response.headers.forEach((value, key) => {
@@ -95,7 +94,7 @@ fs.writeFileSync(
   JSON.stringify(
     {
       runtime: "nodejs20.x",
-      handler: "index.mjs",
+      handler: "index.js",
       launcherType: "Nodejs",
       supportsResponseStreaming: true,
     },
